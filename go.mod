@@ -1,4 +1,4 @@
-module github.com/veggiedefender/torrent-client
+module github.com/djmmatracki/byteblaze
 
 go 1.13
 

@@ -10,9 +10,9 @@ import (
 
 	"log"
 
+	"github.com/djmmatracki/byteblaze/internal/pkg/p2p"
+	"github.com/djmmatracki/byteblaze/internal/pkg/peers"
 	"github.com/jackpal/bencode-go"
-	"github.com/veggiedefender/torrent-client/p2p"
-	"github.com/veggiedefender/torrent-client/peers"
 )
 
 // Port to listen on

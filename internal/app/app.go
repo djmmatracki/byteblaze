@@ -1,4 +1,4 @@
-package listener
+package app
 
 import (
 	"encoding/binary"
@@ -9,10 +9,10 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/veggiedefender/torrent-client/bitfield"
-	"github.com/veggiedefender/torrent-client/handshake"
-	"github.com/veggiedefender/torrent-client/message"
-	"github.com/veggiedefender/torrent-client/torrentfile"
+	"github.com/djmmatracki/byteblaze/internal/pkg/bitfield"
+	"github.com/djmmatracki/byteblaze/internal/pkg/handshake"
+	"github.com/djmmatracki/byteblaze/internal/pkg/message"
+	"github.com/djmmatracki/byteblaze/internal/pkg/torrentfile"
 )
 
 func Run() {
