@@ -1,0 +1,46 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Kubernetes: Run/Debug",
+            "type": "cloudcode.kubernetes",
+            "request": "launch",
+            "skaffoldConfig": "${workspaceFolder}/skaffold.yaml",
+            "imageRegistry": "dominikmatracki/byteblaze",
+            "watch": true,
+            "cleanUp": true,
+            "portForward": true,
+            "debug": [
+                {
+                    "image": "dominikmatracki/byteblaze",
+                    "containerName": "byteblaze-1",
+                    "sourceFileMap": {
+                        "${workspaceFolder}": "/app"
+                    }
+                },
+                {
+                    "image": "dominikmatracki/byteblaze",
+                    "containerName": "byteblaze-2",
+                    "sourceFileMap": {
+                        "${workspaceFolder}": ""
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Attach to Kubernetes Pod (Go)",
+            "type": "cloudcode.kubernetes",
+            "request": "attach",
+            "language": "Go",
+            "debugPort": 40000,
+            "podSelector": {
+                "app": "byteblaze-1"
+            },
+            "localRoot": "${workspaceFolder}",
+            "remoteRoot": "/app"
+        }
+    ]
+}

@@ -1,0 +1,9 @@
+{
+    "cloudcode.kubeconfigs": [
+        {
+            "name": "/home/piotr/.kube/hackhaton.yaml",
+            "configPath": "/home/piotr/.kube/hackhaton.yaml"
+        }
+    ],
+    "cloudcode.active-kubeconfig": "/home/piotr/.kube/hackhaton.yaml"
+}
