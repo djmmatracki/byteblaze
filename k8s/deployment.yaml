@@ -1,0 +1,69 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: byteblaze-1
+spec:
+  selector:
+    app: byteblaze-1
+  ports:
+  - port: 6881
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: byteblaze-1
+spec:
+  selector:
+    matchLabels:
+      app: byteblaze-1
+  template:
+    metadata:
+      labels:
+        app: byteblaze-1
+    spec:
+      containers:
+      - name: byteblaze-1
+        image: dominikmatracki/byteblaze:latest
+        resources:
+          limits:
+            memory: "128Mi"
+            cpu: "500m"
+        ports:
+        - containerPort: 6881
+      imagePullSecrets:
+      - name: regcred
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: byteblaze-2
+spec:
+  selector:
+    app: byteblaze-2
+  ports:
+  - port: 6881
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: byteblaze-2
+spec:
+  selector:
+    matchLabels:
+      app: byteblaze-2
+  template:
+    metadata:
+      labels:
+        app: byteblaze-2
+    spec:
+      containers:
+      - name: byteblaze-2
+        image: dominikmatracki/byteblaze:latest
+        resources:
+          limits:
+            memory: "128Mi"
+            cpu: "500m"
+        ports:
+        - containerPort: 6881
+      imagePullSecrets:
+      - name: regcred
