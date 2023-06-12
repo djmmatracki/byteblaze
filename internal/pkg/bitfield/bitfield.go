@@ -14,16 +14,15 @@ func (bf Bitfield) HasPiece(index int) bool {
 }
 
 // SetPiece sets a bit in the bitfield
-func (bf Bitfield) SetPiece(index int) []byte {
+func (bf Bitfield) SetPiece(index int) {
 	byteIndex := index / 8
 	offset := index % 8
 
 	// silently discard invalid bounded index
 	if byteIndex < 0 || byteIndex >= len(bf) {
-		return bf
+		return
 	}
 	bf[byteIndex] |= 1 << uint(7-offset)
-	return bf
 }
 
 // Set all bits to 0

@@ -3,6 +3,8 @@ package handshake
 import (
 	"fmt"
 	"io"
+
+	"log"
 )
 
 type handshakeID uint8
@@ -52,7 +54,7 @@ func Read(r io.Reader) (*Handshake, error) {
 		return nil, err
 	}
 	pstrlen := int(lengthBuf[0])
-	fmt.Printf("received pstrlen %d\n", pstrlen)
+	log.Printf("received pstrlen %d\n", pstrlen)
 
 	if pstrlen == 0 {
 		err := fmt.Errorf("pstrlen cannot be 0")
@@ -60,16 +62,17 @@ func Read(r io.Reader) (*Handshake, error) {
 	}
 
 	handshakeBuf := make([]byte, 48+pstrlen)
-	fmt.Println("reading handshake buffer")
+	log.Println("reading handshake buffer")
 	_, err = io.ReadFull(r, handshakeBuf)
 	if err != nil {
-		fmt.Println("error while reading handshake buffer")
+		log.Println("error while reading handshake buffer")
 		return nil, err
 	}
 	// First byte after the pstr is for the action
-	action := handshakeID(handshakeBuf[pstrlen])
+	log.Println("reading handshake succeded")
 
-	fmt.Printf("got handshake action %d\n", action)
+	action := handshakeBuf[pstrlen]
+	log.Printf("got handshake action %d\n", action)
 	var infoHash, peerID [20]byte
 
 	copy(infoHash[:], handshakeBuf[pstrlen+8:pstrlen+8+20])
@@ -79,7 +82,7 @@ func Read(r io.Reader) (*Handshake, error) {
 		Pstr:     string(handshakeBuf[0:pstrlen]),
 		InfoHash: infoHash,
 		PeerID:   peerID,
-		Action:   action,
+		Action:   handshakeID(action),
 	}
 
 	return &h, nil

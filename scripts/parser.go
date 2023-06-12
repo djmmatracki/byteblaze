@@ -53,8 +53,8 @@ func main() {
 			piecesHaveEqualLength = false
 		}
 		pieceLength = len(data[start:stop])
-		fmt.Printf("piece length: %d\\n", pieceLength)
-		fmt.Printf("piece: '%s'\n", data[start:stop])
+		log.Printf("piece length: %d\\n", pieceLength)
+		log.Printf("piece: '%s'\n", data[start:stop])
 		hash := sha1.Sum(data[start:stop])
 		hashes += fmt.Sprintf("%s", hash)
 	}
@@ -76,7 +76,7 @@ func main() {
 	if err != nil {
 		return
 	}
-	fmt.Printf("%x\n", hash)
+	log.Printf("%x\n", hash)
 
 	writer := bufio.NewWriter(file)
 	err = bencode.Marshal(writer, tf)
@@ -87,5 +87,5 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println("Pieces equal length:", piecesHaveEqualLength)
+	log.Println("Pieces equal length:", piecesHaveEqualLength)
 }

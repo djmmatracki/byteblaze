@@ -8,9 +8,11 @@ import (
 	"net"
 	"os"
 
+	"log"
+
+	"github.com/djmmatracki/byteblaze/internal/pkg/p2p"
+	"github.com/djmmatracki/byteblaze/internal/pkg/peers"
 	"github.com/jackpal/bencode-go"
-	"github.com/veggiedefender/torrent-client/p2p"
-	"github.com/veggiedefender/torrent-client/peers"
 )
 
 // Port to listen on
@@ -46,10 +48,21 @@ func (t *TorrentFile) DownloadToFile(path string) error {
 	if err != nil {
 		return err
 	}
+	log.Printf("generated peer ID %s", peerID)
+	IPs, err := net.LookupHost("byteblaze-1")
+	if err != nil {
+		log.Println("error while looking up host", err)
+		return err
+	}
+	if len(IPs) != 1 {
+		log.Println("could not resolve host")
+		return nil
+	}
+	log.Printf("resolved IP %s", IPs[0])
 
 	peers := []peers.Peer{
 		{
-			IP:   net.ParseIP("byteblaze-1"),
+			IP:   net.ParseIP(IPs[0]),
 			Port: Port,
 		},
 	}
@@ -63,6 +76,7 @@ func (t *TorrentFile) DownloadToFile(path string) error {
 		Length:      t.Length,
 		Name:        t.Name,
 	}
+	log.Println("created torrent")
 	buf, err := torrent.Download()
 	if err != nil {
 		return err
