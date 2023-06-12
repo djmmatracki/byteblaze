@@ -3,6 +3,7 @@ package client
 import (
 	"bytes"
 	"fmt"
+	"log"
 	"net"
 	"time"
 
@@ -49,6 +50,7 @@ func recvBitfield(conn net.Conn) (bitfield.Bitfield, error) {
 	conn.SetDeadline(time.Now().Add(5 * time.Second))
 	defer conn.SetDeadline(time.Time{}) // Disable the deadline
 
+	log.Println("reading bitfield")
 	msg, err := message.Read(conn)
 	if err != nil {
 		return nil, err
@@ -61,6 +63,7 @@ func recvBitfield(conn net.Conn) (bitfield.Bitfield, error) {
 		err := fmt.Errorf("Expected bitfield but got ID %d", msg.ID)
 		return nil, err
 	}
+	log.Println("succesfuly read bitfield")
 
 	return msg.Payload, nil
 }
@@ -73,12 +76,15 @@ func New(peer peers.Peer, peerID, infoHash [20]byte) (*Client, error) {
 		return nil, err
 	}
 
+	log.Println("completing handshake to peer")
 	_, err = completeHandshake(conn, infoHash, peerID)
 	if err != nil {
 		conn.Close()
 		return nil, err
 	}
+	log.Println("completed handshake successfuly with seeder")
 
+	log.Println("receiving bitfield")
 	bf, err := recvBitfield(conn)
 	if err != nil {
 		conn.Close()

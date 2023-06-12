@@ -27,7 +27,7 @@ func Run() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		fmt.Println("received connection")
+		log.Println("received connection")
 		go handleConnection(conn)
 	}
 }
@@ -35,26 +35,26 @@ func Run() {
 func handleConnection(conn net.Conn) {
 	defer conn.Close()
 	// Complete handshake
-	fmt.Printf("reading handshake from %s to %s\n", conn.RemoteAddr(), conn.LocalAddr())
+	log.Printf("reading handshake from %s to %s\n", conn.RemoteAddr(), conn.LocalAddr())
 	hs, err := handshake.Read(conn)
 	if err != nil {
-		fmt.Printf("cannot read handshake %v\n", err)
+		log.Printf("cannot read handshake %v\n", err)
 		return
 	}
-	fmt.Printf("got action %d\n", hs.Action)
+	log.Printf("got action %d\n", hs.Action)
 
 	// Read actions
 	switch hs.Action {
 	case handshake.HandshakeReceiveBroadcast:
 		// Receive a broadcast message with the torrentfile and start downloading the file specified in the torrent file.
-		fmt.Println("received broadcast and start downloading")
+		log.Println("received broadcast and start downloading")
 		tf, err := torrentfile.Open("/app/.torrent")
 		if err != nil {
-			fmt.Println("error while parsing .torrent")
+			log.Println("error while parsing .torrent")
 			log.Fatal(err)
 		}
 
-		fmt.Println("starting downloading")
+		log.Println("starting downloading")
 		err = tf.DownloadToFile("downloaded_file")
 		if err != nil {
 			log.Fatal(err)
@@ -67,21 +67,21 @@ func handleConnection(conn net.Conn) {
 
 		// Return back the handshake
 		// TODO Change this to actual info hash
-		fmt.Printf("received request for a file with infohash %s", hs.InfoHash)
+		log.Printf("received request for a file with infohash %s", hs.InfoHash)
 		req := handshake.New(handshake.HandshakeRequest, hs.InfoHash, hs.PeerID)
 
 		_, err := conn.Write(req.Serialize())
 		if err != nil {
-			fmt.Println("error while sending handshake")
+			log.Println("error while sending handshake")
 			return
 		}
-		fmt.Println("handshake completed succesfully")
+		log.Println("handshake completed succesfully")
 		err = handleFileRequest(conn, hs.InfoHash)
 		if err != nil {
-			fmt.Printf("error while preocessing request: %v", err)
+			log.Printf("error while preocessing request: %v", err)
 			return
 		}
-		fmt.Println("completed request")
+		log.Println("completed request")
 	case handshake.HandshakeSendBroadcast:
 		// Receive a message with the torrentfile, broadcast it to other peers and start download the file specified in the torrent file.
 		// Load torrentfile
@@ -95,7 +95,7 @@ func handleConnection(conn net.Conn) {
 			log.Fatal(err)
 		}
 	default:
-		fmt.Println("corrupted handshake")
+		log.Println("corrupted handshake")
 	}
 
 }
@@ -105,40 +105,52 @@ func handleFileRequest(conn net.Conn, infoHash [20]byte) error {
 	// Check what info hashes are in the folder
 	// Check what pieces do I have
 	// Compose bitfield
-	var bf bitfield.Bitfield
+	bf := make(bitfield.Bitfield, 1)
 	pieces := make(map[int][]byte)
 
-	fmt.Printf("got info hash %s", infoHash)
-	pathToPieces := fmt.Sprintf("/var/byteblaze/%s", infoHash)
+	log.Printf("got info hash %x", infoHash)
+	pathToPieces := fmt.Sprintf("/var/byteblaze/%x", infoHash)
 	_, err := os.Stat(pathToPieces)
 	if err == nil {
-		fmt.Println("File exists")
+		log.Println("File exists")
 	} else if os.IsNotExist(err) {
-		fmt.Println("File does not exist")
+		log.Println("File does not exist")
 		return err
 	} else {
-		fmt.Println("error")
+		log.Println("error")
 		return err
 	}
 
+	log.Println("reading directory pieces")
 	dir, err := os.ReadDir(pathToPieces)
 	if err != nil {
+		log.Printf("error while reading dir %s", pathToPieces)
 		return err
 	}
 
 	for _, file := range dir {
+		log.Printf("processing piece '%s'", file.Name())
 		i, err := strconv.Atoi(file.Name())
 		if err != nil {
+			log.Printf("error while converting file name to int: %v", err)
 			return err
 		}
-		filePath := fmt.Sprintf("%s", file.Name())
+		filePath := fmt.Sprintf("%s/%s", pathToPieces, file.Name())
+		log.Printf("processing file path %s", filePath)
 		f, err := os.Open(filePath)
-		pieces[i], err = ioutil.ReadAll(f)
 		if err != nil {
 			return err
 		}
+		log.Println("sucessfuly opened piece file")
+		pieces[i], err = ioutil.ReadAll(f)
+		if err != nil {
+			log.Println("error while reading piece")
+			return err
+		}
+		log.Println("succesfuly read piece")
 		f.Close()
-		bf = bf.SetPiece(i)
+		bf.SetPiece(i)
+		log.Printf("set bitfield %x", bf)
 	}
 
 	// Send bitfield
@@ -146,11 +158,13 @@ func handleFileRequest(conn net.Conn, infoHash [20]byte) error {
 		ID:      message.MsgBitfield,
 		Payload: bf,
 	}
+	log.Printf("sending bitfield %x", bf)
 	_, err = conn.Write(bitFieldMsg.Serialize())
 	if err != nil {
-		fmt.Println("unable to send message")
+		log.Println("unable to send message")
 		return err
 	}
+	log.Println("sending messages")
 
 	for {
 		// Listen for messages
@@ -165,23 +179,23 @@ func handleFileRequest(conn net.Conn, infoHash [20]byte) error {
 
 		switch msg.ID {
 		case message.MsgUnchoke:
-			fmt.Println("got unchoke message")
+			log.Println("got unchoke message")
 			msg := message.Message{
 				ID: message.MsgUnchoke,
 			}
 			conn.Write(msg.Serialize())
 		case message.MsgChoke:
-			fmt.Println("got choke message")
+			log.Println("got choke message")
 			msg := message.Message{
 				ID: message.MsgChoke,
 			}
 			conn.Write(msg.Serialize())
 		case message.MsgInterested:
-			fmt.Println("got interested message")
+			log.Println("got interested message")
 		case message.MsgRequest:
-			fmt.Println("got request message")
+			log.Println("got request message")
 			if len(msg.Payload) != 12 {
-				fmt.Println("got invalid length of payload for message request")
+				log.Println("got invalid length of payload for message request")
 				return err
 			}
 			index := int(binary.BigEndian.Uint32(msg.Payload[0:4]))
@@ -198,9 +212,9 @@ func handleFileRequest(conn net.Conn, infoHash [20]byte) error {
 			// Send back the message with the piece
 			conn.Write(msgWithPiece.Serialize())
 		case message.MsgHave:
-			fmt.Println("Got message have")
+			log.Println("Got message have")
 		default:
-			fmt.Println("Undefined message")
+			log.Println("Undefined message")
 			return err
 		}
 

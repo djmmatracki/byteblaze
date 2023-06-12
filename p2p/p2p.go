@@ -95,8 +95,8 @@ func attemptDownloadPiece(c *client.Client, pw *pieceWork) ([]byte, error) {
 	defer c.Conn.SetDeadline(time.Time{}) // Disable the deadline
 
 	for state.downloaded < pw.length {
-		fmt.Printf("downloaded %d, length %d\n", state.downloaded, pw.length)
-		fmt.Printf("choked: %v\n", state.client.Choked)
+		log.Printf("downloaded %d, length %d\n", state.downloaded, pw.length)
+		log.Printf("choked: %v\n", state.client.Choked)
 		// If unchoked, send requests until we have enough unfulfilled requests
 		if !state.client.Choked {
 			for state.backlog < MaxBacklog && state.requested < pw.length {
@@ -134,6 +134,7 @@ func checkIntegrity(pw *pieceWork, buf []byte) error {
 
 func (t *Torrent) startDownloadWorker(peer peers.Peer, workQueue chan *pieceWork, results chan *pieceResult) {
 	// Initialize handshake
+	log.Println("Initializing handshake to peer that we would like to download from")
 	c, err := client.New(peer, t.PeerID, t.InfoHash)
 	if err != nil {
 		log.Printf("Could not handshake with %s. Disconnecting\n", peer.IP)
@@ -147,11 +148,11 @@ func (t *Torrent) startDownloadWorker(peer peers.Peer, workQueue chan *pieceWork
 
 	for pw := range workQueue {
 		if !c.Bitfield.HasPiece(pw.index) {
-			fmt.Println("bitfield does not have piece")
+			log.Println("bitfield does not have piece")
 			workQueue <- pw // Put piece back on the queue
 			continue
 		}
-		fmt.Println("bitfield does have piece")
+		log.Println("bitfield does have piece")
 
 		// Download the piece
 		buf, err := attemptDownloadPiece(c, pw)
@@ -200,6 +201,7 @@ func (t *Torrent) Download() ([]byte, error) {
 		workQueue <- &pieceWork{index, hash, length}
 	}
 
+	log.Println("Starting workers")
 	// Start workers
 	for _, peer := range t.Peers {
 		go t.startDownloadWorker(peer, workQueue, results)
