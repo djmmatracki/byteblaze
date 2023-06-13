@@ -19,7 +19,6 @@ FROM ubuntu:20.04
 
 
 COPY --from=builder /build/byteblaze /app/byteblaze
-COPY .torrent /app/.torrent
 
 RUN mkdir -p /var/byteblaze
 

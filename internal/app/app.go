@@ -13,6 +13,7 @@ import (
 	"github.com/djmmatracki/byteblaze/internal/pkg/handshake"
 	"github.com/djmmatracki/byteblaze/internal/pkg/message"
 	"github.com/djmmatracki/byteblaze/internal/pkg/torrentfile"
+	"github.com/jackpal/bencode-go"
 )
 
 func Run() {
@@ -47,13 +48,39 @@ func handleConnection(conn net.Conn) {
 	switch hs.Action {
 	case handshake.HandshakeReceiveBroadcast:
 		// Receive a broadcast message with the torrentfile and start downloading the file specified in the torrent file.
+		// torrentfile, err := ioutil.ReadAll(conn)
+		// bencode.Decode(conn)
+
 		log.Println("received broadcast and start downloading")
-		tf, err := torrentfile.Open("/app/.torrent")
+		// Send back handshake
+		req := handshake.New(handshake.HandshakeACK, hs.InfoHash, hs.PeerID)
+		_, err := conn.Write(req.Serialize())
 		if err != nil {
-			log.Println("error while parsing .torrent")
-			log.Fatal(err)
+			log.Println("error while sending handshake")
+			return
 		}
 
+		log.Println("sent ACK to host")
+		// Read torrentfile
+		bto := torrentfile.BencodeTorrent{}
+
+		// TODO - Save torrentfile to file system /var/byteblaze
+
+		err = bencode.Unmarshal(conn, &bto)
+		if err != nil {
+			log.Fatal("cannot unmarshal beencode file")
+			return
+		}
+		log.Println("unmarshaling beencode file")
+
+		tf, err := bto.ToTorrentFile()
+		if err != nil {
+			log.Fatal("cannot convert to TorrentFile")
+			return
+		}
+		log.Println("converted bencode to torrentfile")
+
+		// Start downloading
 		log.Println("starting downloading")
 		err = tf.DownloadToFile("downloaded_file")
 		if err != nil {
@@ -68,7 +95,7 @@ func handleConnection(conn net.Conn) {
 		// Return back the handshake
 		// TODO Change this to actual info hash
 		log.Printf("received request for a file with infohash %s", hs.InfoHash)
-		req := handshake.New(handshake.HandshakeRequest, hs.InfoHash, hs.PeerID)
+		req := handshake.New(handshake.HandshakeACK, hs.InfoHash, hs.PeerID)
 
 		_, err := conn.Write(req.Serialize())
 		if err != nil {
@@ -84,12 +111,41 @@ func handleConnection(conn net.Conn) {
 		log.Println("completed request")
 	case handshake.HandshakeSendBroadcast:
 		// Receive a message with the torrentfile, broadcast it to other peers and start download the file specified in the torrent file.
-		// Load torrentfile
-		tf, err := torrentfile.Open(".torrent")
+		// Send back handshake with ACK
+		// Expect torrentfile
+		// Send torrentfile to peers
+		// Start downloading
+		log.Println("received broadcast and start downloading")
+		// Send back handshake
+		req := handshake.New(handshake.HandshakeACK, hs.InfoHash, hs.PeerID)
+		_, err := conn.Write(req.Serialize())
 		if err != nil {
-			log.Fatal(err)
+			log.Println("error while sending handshake")
+			return
 		}
 
+		log.Println("sent ACK to host")
+		// Read torrentfile
+		bto := torrentfile.BencodeTorrent{}
+
+		// TODO - Save torrentfile to file system /var/byteblaze
+
+		err = bencode.Unmarshal(conn, &bto)
+		if err != nil {
+			log.Fatal("cannot unmarshal beencode file")
+			return
+		}
+		log.Println("unmarshaling beencode file")
+
+		tf, err := bto.ToTorrentFile()
+		if err != nil {
+			log.Fatal("cannot convert to TorrentFile")
+			return
+		}
+		log.Println("converted bencode to torrentfile")
+
+		// Start downloading
+		log.Println("starting downloading")
 		err = tf.DownloadToFile("downloaded_file")
 		if err != nil {
 			log.Fatal(err)

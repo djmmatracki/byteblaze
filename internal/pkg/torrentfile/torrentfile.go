@@ -35,7 +35,7 @@ type bencodeInfo struct {
 	Name        string `bencode:"name"`
 }
 
-type bencodeTorrent struct {
+type BencodeTorrent struct {
 	Announce string      `bencode:"announce"`
 	Info     bencodeInfo `bencode:"info"`
 }
@@ -102,12 +102,12 @@ func Open(path string) (TorrentFile, error) {
 	}
 	defer file.Close()
 
-	bto := bencodeTorrent{}
+	bto := BencodeTorrent{}
 	err = bencode.Unmarshal(file, &bto)
 	if err != nil {
 		return TorrentFile{}, err
 	}
-	return bto.toTorrentFile()
+	return bto.ToTorrentFile()
 }
 
 func (i *bencodeInfo) hash() ([20]byte, error) {
@@ -136,7 +136,7 @@ func (i *bencodeInfo) splitPieceHashes() ([][20]byte, error) {
 	return hashes, nil
 }
 
-func (bto *bencodeTorrent) toTorrentFile() (TorrentFile, error) {
+func (bto *BencodeTorrent) ToTorrentFile() (TorrentFile, error) {
 	infoHash, err := bto.Info.hash()
 	if err != nil {
 		return TorrentFile{}, err

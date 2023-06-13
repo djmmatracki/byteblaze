@@ -10,9 +10,10 @@ import (
 type handshakeID uint8
 
 const (
-	HandshakeRequest          handshakeID = 0
-	HandshakeReceiveBroadcast handshakeID = 1
-	HandshakeSendBroadcast    handshakeID = 2
+	HandshakeACK              handshakeID = 0
+	HandshakeRequest          handshakeID = 1
+	HandshakeReceiveBroadcast handshakeID = 2
+	HandshakeSendBroadcast    handshakeID = 3
 )
 
 // A Handshake is a special message that a peer uses to identify itself
