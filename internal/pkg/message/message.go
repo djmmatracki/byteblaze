@@ -27,6 +27,8 @@ const (
 	MsgPiece messageID = 7
 	// MsgCancel cancels a request
 	MsgCancel messageID = 8
+	// MsgCancel cancels a request
+	MsgRequestBitfield messageID = 9
 )
 
 // Message stores ID and payload of a message

@@ -6,8 +6,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"io/ioutil"
-	"log"
 	"net"
 	"os"
 	"strconv"
@@ -17,241 +15,161 @@ import (
 	"github.com/djmmatracki/byteblaze/internal/pkg/message"
 	"github.com/djmmatracki/byteblaze/internal/pkg/torrentfile"
 	"github.com/jackpal/bencode-go"
+	"github.com/sirupsen/logrus"
 )
 
-func Run() {
-	listen, err := net.Listen("tcp", "0.0.0.0:6881")
+func Run(logger *logrus.Logger, ipAddress string, port int) {
+	address := fmt.Sprintf("%s:%d", ipAddress, port)
+	listen, err := net.Listen("tcp", address)
 	if err != nil {
-		log.Fatal(err)
+		logger.Error("error while starting to listen on")
+		return
 	}
 	defer listen.Close()
 
 	for {
 		conn, err := listen.Accept()
 		if err != nil {
-			log.Fatal(err)
+			logger.Fatal(err)
 		}
-		log.Println("received connection")
-		go handleConnection(conn)
+		logger.Println("received connection")
+		go handleConnection(logger, conn)
 	}
 }
 
-func handleConnection(conn net.Conn) {
+func handleConnection(logger *logrus.Logger, conn net.Conn) {
 	defer conn.Close()
+	communication := fmt.Sprintf("%s -> %s", conn.LocalAddr(), conn.RemoteAddr())
+	log := logger.WithField("connection", communication).Logger
+
 	// Complete handshake
-	log.Printf("reading handshake from %s to %s\n", conn.RemoteAddr(), conn.LocalAddr())
+	log.Debugf("Reading handshake from %s to %s", conn.RemoteAddr(), conn.LocalAddr())
 	hs, err := handshake.Read(conn)
 	if err != nil {
-		log.Printf("cannot read handshake %v\n", err)
+		log.Errorf("Cannot read handshake from %s, error: %v", conn.RemoteAddr(), err)
 		return
 	}
-	log.Printf("got action %d\n", hs.Action)
 
+	log.Debugf("Got handshake action %d", hs.Action)
 	// Read actions
 	switch hs.Action {
 	case handshake.HandshakeReceiveBroadcast:
 		// Receive a broadcast message with the torrentfile and start downloading the file specified in the torrent file.
-		log.Println("received broadcast and start downloading")
-		// Send back handshake
-		req := handshake.New(handshake.HandshakeACK, hs.InfoHash, hs.PeerID)
-		_, err := conn.Write(req.Serialize())
+		log.Debugf("Received broadcast from %s, starting download", conn.RemoteAddr())
+		err = receiveBroadcast(log, conn, hs)
 		if err != nil {
-			log.Println("error while sending handshake")
+			log.Errorf("error while receiving broadcast, error: %v", err)
 			return
 		}
-
-		log.Println("sent ACK to host")
-		// Read torrentfile
-		bto := torrentfile.BencodeTorrent{}
-
-		// TODO - Save torrentfile to file system /var/byteblaze
-		log.Println("starting to read...")
-		data, err := io.ReadAll(conn)
-		if err != nil {
-			log.Fatal("error while reading torrentfile data")
-			return
-		}
-		log.Println("creating directory")
-		createDir(fmt.Sprintf("/var/byteblaze/%x", hs.InfoHash))
-		torrentFilePath := fmt.Sprintf("/var/byteblaze/%x/torrentfile", hs.InfoHash)
-		err = os.WriteFile(torrentFilePath, data, 0666) // Make specific file perms
-		if err != nil {
-			log.Fatal("error while writing torrentfile")
-			return
-		}
-		log.Println("created torrentfile")
-
-		log.Printf("unmarshaling to bencode format, data: '%s'", data)
-		buffer := bytes.NewBuffer(data)
-		err = bencode.Unmarshal(buffer, &bto)
-		if err != nil {
-			log.Fatal("cannot unmarshal beencode file")
-			return
-		}
-		log.Printf("unmarshaled beencode file to %+v", bto)
-
-		tf, err := bto.ToTorrentFile()
-		if err != nil {
-			log.Fatal("cannot convert to TorrentFile")
-			return
-		}
-		log.Println("converted bencode to torrentfile")
-
-		// Start downloading
-		log.Println("starting downloading")
-		err = tf.DownloadToFile("downloaded_file")
-		if err != nil {
-			log.Fatal(err)
-		}
-
 	case handshake.HandshakeRequest:
-		// Request for a given file. When some other peer trys to download a file.
-		//   - Based on the info hash identify what file does the client want
-		//   - Create a map that will based on the infohash get the directory of the pieces
-
-		// Return back the handshake
-		// TODO Change this to actual info hash
-		log.Printf("received request for a file with infohash %s", hs.InfoHash)
-		req := handshake.New(handshake.HandshakeACK, hs.InfoHash, hs.PeerID)
-
-		_, err := conn.Write(req.Serialize())
+		log.Debugf("Received request from %s for a file with infohash: '%x'", conn.RemoteAddr(), hs.InfoHash)
+		err = handleFileRequest(log, conn, hs)
 		if err != nil {
-			log.Println("error while sending handshake")
+			log.Errorf("error while preocessing file request: %v", err)
 			return
 		}
-		log.Println("handshake completed succesfully")
-		err = handleFileRequest(conn, hs.InfoHash)
-		if err != nil {
-			log.Printf("error while preocessing request: %v", err)
-			return
-		}
-		log.Println("completed request")
+		log.Debugln("Request completed")
 	case handshake.HandshakeSendBroadcast:
-		// Receive a message with the torrentfile, broadcast it to other peers and start download the file specified in the torrent file.
-		// Send back handshake with ACK
-		// Expect torrentfile
-		// Send torrentfile to peers
-		// Start downloading
-		log.Println("received send broadcast and start downloading")
-		// Send back handshake
+		log.Debugln("Received send broadcast and start downloading")
 		req := handshake.New(handshake.HandshakeACK, hs.InfoHash, hs.PeerID)
 		_, err := conn.Write(req.Serialize())
 		if err != nil {
-			log.Println("error while sending handshake")
+			log.Debugln("error while sending back ACK handshake")
 			return
 		}
 
-		log.Println("sent ACK to host")
-		// Read torrentfile
+		log.Debugln("sent ACK to host")
 		bto := torrentfile.BencodeTorrent{}
-
-		// TODO - Save torrentfile to file system /var/byteblaze
-
 		err = bencode.Unmarshal(conn, &bto)
 		if err != nil {
-			log.Fatal("cannot unmarshal beencode file")
+			log.Errorf("cannot unmarshal beencode file, error %v", err)
 			return
 		}
-		log.Println("unmarshaling beencode file")
+		log.Debugln("unmarshaling beencode file")
 
 		tf, err := bto.ToTorrentFile()
 		if err != nil {
 			log.Fatal("cannot convert to TorrentFile")
 			return
 		}
-		log.Println("converted bencode to torrentfile")
-		log.Println("broadcasting messages to peers")
-		// Send broadcast to peers
+		log.Debugln("converted bencode to torrentfile")
+		log.Debugln("broadcasting messages to peers")
+
+		// A list of peers to send broadcast
 		peers := []string{
 			"143.42.54.125:6881",
 			"143.42.54.140:6881",
 		}
 		for _, peerIP := range peers {
-			broadcastMessage(peerIP, bto, hs.InfoHash)
+			err = broadcastMessage(log, peerIP, bto, hs.InfoHash)
+			if err != nil {
+				log.Errorf("error while broadcasting message to peer %s", peerIP)
+			}
 		}
-		log.Println("broadcasted messages")
+		log.Debugln("broadcasted messages")
 
 		// Start downloading
-		log.Println("starting downloading")
-		err = tf.DownloadToFile("downloadedfile")
+		log.Debugln("starting downloading")
+		err = tf.DownloadToFile(log)
 		if err != nil {
 			log.Fatal(err)
 		}
 	default:
-		log.Println("corrupted handshake")
+		log.Debugln("corrupted handshake")
 	}
 
 }
 
-func handleFileRequest(conn net.Conn, infoHash [20]byte) error {
+func handleFileRequest(logger *logrus.Logger, conn net.Conn, hs *handshake.Handshake) error {
 	// Read files from /var/byteblaze
 	// Check what info hashes are in the folder
 	// Check what pieces do I have
 	// Compose bitfield
-	bf := make(bitfield.Bitfield, 1)
-	pieces := make(map[int][]byte)
+	req := handshake.New(handshake.HandshakeACK, hs.InfoHash, hs.PeerID)
 
-	log.Printf("got info hash %x", infoHash)
-	pathToPieces := fmt.Sprintf("/var/byteblaze/%x", infoHash)
+	_, err := conn.Write(req.Serialize())
+	if err != nil {
+		logger.Println("error while sending handshake")
+		return err
+	}
+	logger.Println("handshake completed succesfully")
 
-	_, err := os.Stat(pathToPieces)
+	logger.Printf("got info hash %x", hs.InfoHash)
+	pathToPieces := fmt.Sprintf("/var/byteblaze/%x", hs.InfoHash)
+
+	_, err = os.Stat(pathToPieces)
 	if err == nil {
-		log.Println("File exists")
+		logger.Println("File exists")
 	} else if os.IsNotExist(err) {
-		log.Println("File does not exist")
+		logger.Println("File does not exist")
 		return err
 	} else {
-		log.Println("error")
+		logger.Println("error")
 		return err
 	}
 
-	log.Println("reading directory pieces")
-	dir, err := os.ReadDir(pathToPieces)
+	torrentFilePath := fmt.Sprintf("/var/byteblaze/%x/torrentfile", hs.InfoHash)
+	tf, err := torrentfile.Open(torrentFilePath)
 	if err != nil {
-		log.Printf("error while reading dir %s", pathToPieces)
 		return err
 	}
+	numOfPieces := len(tf.PieceHashes)
 
-	for _, file := range dir {
-		if file.Name() == "torrentfile" {
-			continue
-		}
-		log.Printf("processing piece '%s'", file.Name())
-		i, err := strconv.Atoi(file.Name())
-		if err != nil {
-			log.Printf("error while converting file name to int: %v", err)
-			return err
-		}
-		filePath := fmt.Sprintf("%s/%s", pathToPieces, file.Name())
-		log.Printf("processing file path %s", filePath)
-		f, err := os.Open(filePath)
-		if err != nil {
-			return err
-		}
-		log.Println("sucessfuly opened piece file")
-		pieces[i], err = ioutil.ReadAll(f)
-		if err != nil {
-			log.Println("error while reading piece")
-			return err
-		}
-		log.Println("succesfuly read piece")
-		f.Close()
-		bf.SetPiece(i)
-		log.Printf("set bitfield %x", bf)
-	}
+	logger.Println("reading directory pieces")
+	bf, err := getBitfield(logger, pathToPieces, numOfPieces/8+1)
 
 	// Send bitfield
 	bitFieldMsg := message.Message{
 		ID:      message.MsgBitfield,
 		Payload: bf,
 	}
-	log.Printf("sending bitfield %x", bf)
+	// logger.Printf("sending bitfield %x", bf)
 	_, err = conn.Write(bitFieldMsg.Serialize())
 	if err != nil {
-		log.Println("unable to send message")
+		logger.Println("unable to send message")
 		return err
 	}
-	log.Println("sending messages")
+	logger.Println("sending messages")
 
 	for {
 		// Listen for messages
@@ -266,31 +184,52 @@ func handleFileRequest(conn net.Conn, infoHash [20]byte) error {
 
 		switch msg.ID {
 		case message.MsgUnchoke:
-			log.Println("got unchoke message")
+			logger.Println("got unchoke message")
 			msg := message.Message{
 				ID: message.MsgUnchoke,
 			}
 			conn.Write(msg.Serialize())
 		case message.MsgChoke:
-			log.Println("got choke message")
+			logger.Println("got choke message")
 			msg := message.Message{
 				ID: message.MsgChoke,
 			}
 			conn.Write(msg.Serialize())
 		case message.MsgInterested:
-			log.Println("got interested message")
+			logger.Println("got interested message")
+		case message.MsgRequestBitfield:
+			logger.Println("requested bitfield")
+			bf, err = getBitfield(logger, pathToPieces, numOfPieces/8+1)
+			if err != nil {
+				return err
+			}
+			msg = &message.Message{
+				ID:      message.MsgBitfield,
+				Payload: bf,
+			}
+			_, err = conn.Write(msg.Serialize())
+			if err != nil {
+				return err
+			}
+
 		case message.MsgRequest:
-			log.Println("got request message")
+			logger.Println("got request message")
 			if len(msg.Payload) != 12 {
-				log.Println("got invalid length of payload for message request")
+				logger.Println("got invalid length of payload for message request")
 				return err
 			}
 			index := int(binary.BigEndian.Uint32(msg.Payload[0:4]))
 			begin := int(binary.BigEndian.Uint32(msg.Payload[4:8]))
 			length := int(binary.BigEndian.Uint32(msg.Payload[8:12]))
 			payload := make([]byte, 8+length)
+			piecePath := fmt.Sprintf("/var/byteblaze/%x/%d", hs.InfoHash, index)
+			piece, err := os.ReadFile(piecePath)
+			if err != nil {
+				return err
+			}
+
 			copy(payload[0:8], msg.Payload[0:8])
-			copy(payload[8:], pieces[index][begin:])
+			copy(payload[8:], piece[begin:])
 
 			msgWithPiece := message.Message{
 				ID:      message.MsgPiece,
@@ -299,59 +238,173 @@ func handleFileRequest(conn net.Conn, infoHash [20]byte) error {
 			// Send back the message with the piece
 			conn.Write(msgWithPiece.Serialize())
 		case message.MsgHave:
-			log.Println("Got message have")
+			logger.Println("Got message have")
 		default:
-			log.Println("Undefined message")
+			logger.Println("Undefined message")
 			return err
 		}
 
 	}
 }
 
-func broadcastMessage(peerIP string, tf torrentfile.BencodeTorrent, infoHash [20]byte) {
+func broadcastMessage(logger *logrus.Logger, peerIP string, tf torrentfile.BencodeTorrent, infoHash [20]byte) error {
+	logger.Debugln("Dialing message to peer %s", peerIP)
 	conn, err := net.Dial("tcp", peerIP)
 	if err != nil {
-		return
+		logger.Errorf("error while dialing message to peer %s, error: %v", peerIP, err)
+		return err
 	}
 	var peerID [20]byte
 	_, err = rand.Read(peerID[:])
 	if err != nil {
-		return
+		logger.Errorf("error while generating peerID, error: %v", err)
+		return err
 	}
 
 	req := handshake.New(handshake.HandshakeReceiveBroadcast, infoHash, peerID)
 	_, err = conn.Write(req.Serialize())
 	if err != nil {
-		log.Println("error while sending handshake")
-		return
+		logger.Errorf("sending broadcast, error: %v", err)
+		return err
 	}
 
 	_, err = handshake.Read(conn)
 	if err != nil {
-		log.Printf("cannot read handshake %v\n", err)
-		return
+		logger.Errorf("cannot read ACK handshake, error: %v", err)
+		return err
 	}
 
 	err = bencode.Marshal(conn, tf)
 	if err != nil {
-		log.Printf("cannot marshal tf to connection %v\n", err)
-		return
+		logger.Errorf("cannot marshal torrent file to connection, error: %v", err)
+		return err
 	}
 	defer conn.Close()
-	log.Printf("successfuly broadcasted message to peer %s", peerIP)
+	logger.Debugf("successfuly broadcasted message to peer %s", peerIP)
+	return nil
 }
 
-func createDir(directoryPath string) {
-	// Check if the directory already exists
+func createDir(logger *logrus.Logger, directoryPath string) error {
 	if _, err := os.Stat(directoryPath); os.IsNotExist(err) {
-		// Directory does not exist, create it
 		err := os.MkdirAll(directoryPath, 0755)
 		if err != nil {
-			fmt.Println("Failed to create directory:", err)
-			return
+			logger.Errorf("Failed to create directory, error: %v", err)
+			return err
 		}
-		fmt.Println("Directory created:", directoryPath)
+		logger.Debugln("Directory created:", directoryPath)
 	} else {
-		fmt.Println("Directory already exists:", directoryPath)
+		logger.Debugln("Directory already exists:", directoryPath)
 	}
+	return nil
+}
+
+func receiveBroadcast(logger *logrus.Logger, conn net.Conn, hs *handshake.Handshake) error {
+	// Send back ACK handshake
+	req := handshake.New(handshake.HandshakeACK, hs.InfoHash, hs.PeerID)
+	_, err := conn.Write(req.Serialize())
+	if err != nil {
+		logger.Errorf("error while sending handshake, error: %v", err)
+		return err
+	}
+	logger.Debugln("Successfuly sent back ACK handshake")
+
+	// Read torrentfile
+	logger.Debugln("Reading torrentfile from connection")
+	bto := torrentfile.BencodeTorrent{}
+	data, err := io.ReadAll(conn)
+	if err != nil {
+		logger.Errorln("error while reading torrentfile data")
+		return err
+	}
+	infoHashDir := fmt.Sprintf("/var/byteblaze/%x", hs.InfoHash)
+	err = createDir(logger, infoHashDir)
+	if err != nil {
+		logger.Errorf("error while creating directory %s", infoHashDir)
+		return err
+	}
+	torrentFilePath := fmt.Sprintf("/var/byteblaze/%x/torrentfile", hs.InfoHash)
+	err = writeToFile(torrentFilePath, data)
+	if err != nil {
+		logger.Errorf("error while writing torrentfile, error: %v", err)
+		return err
+	}
+	logger.Debugf("unmarshaling torrentfile to struct, data received from connection: '%s'", data)
+	buffer := bytes.NewBuffer(data)
+	err = bencode.Unmarshal(buffer, &bto)
+	if err != nil {
+		logger.Errorf("cannot unmarshal torrentfile to go struct %v", err)
+		return err
+	}
+
+	logger.Debugf("Succesfuly unmarshaled torrent file to go struct, struct: %+v", bto)
+	tf, err := bto.ToTorrentFile()
+	if err != nil {
+		logger.Errorf("error while converting torrentfile to TorrentFile struct, error: %v")
+		return err
+	}
+
+	// Start downloading
+	logger.Debugf("Starting download for torrentfile %v", tf)
+	err = tf.DownloadToFile(logger)
+	if err != nil {
+		logger.Errorf("error while downloading file, error %v", err)
+		return err
+	}
+	return nil
+}
+
+func writeToFile(filePath string, data []byte) error {
+
+	// Open the file in write mode, create if it doesn't exist
+	file, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	if err != nil {
+		fmt.Println("Failed to open file:", err)
+		return err
+	}
+	defer file.Close()
+
+	_, err = file.Write(data)
+	if err != nil {
+		fmt.Println("Failed to write to file:", err)
+		return err
+	}
+
+	fmt.Println("Data written to file:", filePath)
+	return nil
+}
+
+func getBitfield(logger *logrus.Logger, pathToPieces string, bitfieldLength int) ([]byte, error) {
+	dir, err := os.ReadDir(pathToPieces)
+	if err != nil {
+		logger.Printf("error while reading dir %s", pathToPieces)
+		return nil, err
+	}
+	bf := make(bitfield.Bitfield, bitfieldLength)
+
+	for _, file := range dir {
+		if file.Name() == "torrentfile" {
+			continue
+		}
+		logger.Printf("processing piece '%s'", file.Name())
+		i, err := strconv.Atoi(file.Name())
+		if err != nil {
+			logger.Printf("error while converting file name to int: %v", err)
+			return nil, err
+		}
+		filePath := fmt.Sprintf("%s/%s", pathToPieces, file.Name())
+		logger.Printf("processing file path %s", filePath)
+		f, err := os.Open(filePath)
+		if err != nil {
+			return nil, err
+		}
+		logger.Println("sucessfuly opened piece file")
+		if err != nil {
+			logger.Println("error while reading piece")
+			return nil, err
+		}
+		logger.Println("succesfuly read piece")
+		f.Close()
+		bf.SetPiece(i)
+	}
+	return bf, nil
 }

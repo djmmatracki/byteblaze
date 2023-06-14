@@ -8,11 +8,10 @@ import (
 	"net"
 	"os"
 
-	"log"
-
 	"github.com/djmmatracki/byteblaze/internal/pkg/p2p"
 	"github.com/djmmatracki/byteblaze/internal/pkg/peers"
 	"github.com/jackpal/bencode-go"
+	"github.com/sirupsen/logrus"
 )
 
 // Port to listen on
@@ -41,17 +40,26 @@ type BencodeTorrent struct {
 }
 
 // DownloadToFile downloads a torrent and writes it to a file
-func (t *TorrentFile) DownloadToFile(path string) error {
+func (t *TorrentFile) DownloadToFile(logger *logrus.Logger) error {
 	// Identify ourselves to tracker
 	var peerID [20]byte
 	_, err := rand.Read(peerID[:])
 	if err != nil {
 		return err
 	}
-	log.Printf("generated peer ID %s", peerID)
+	logger.Debugf("generated peer ID %s", peerID)
+	// Create all seeders
 	peers := []peers.Peer{
 		{
 			IP:   net.ParseIP("143.42.54.122"),
+			Port: Port,
+		},
+		{
+			IP:   net.ParseIP("143.42.54.125"),
+			Port: Port,
+		},
+		{
+			IP:   net.ParseIP("143.42.54.140"),
 			Port: Port,
 		},
 	}
@@ -65,18 +73,7 @@ func (t *TorrentFile) DownloadToFile(path string) error {
 		Length:      t.Length,
 		Name:        t.Name,
 	}
-	log.Println("created torrent")
-	buf, err := torrent.Download()
-	if err != nil {
-		return err
-	}
-
-	outFile, err := os.Create(path)
-	if err != nil {
-		return err
-	}
-	defer outFile.Close()
-	_, err = outFile.Write(buf)
+	err = torrent.Download()
 	if err != nil {
 		return err
 	}

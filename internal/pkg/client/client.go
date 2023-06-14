@@ -84,7 +84,6 @@ func New(peer peers.Peer, peerID, infoHash [20]byte) (*Client, error) {
 	}
 	log.Println("completed handshake successfuly with seeder")
 
-	log.Println("receiving bitfield")
 	bf, err := recvBitfield(conn)
 	if err != nil {
 		conn.Close()
@@ -140,4 +139,19 @@ func (c *Client) SendHave(index int) error {
 	msg := message.FormatHave(index)
 	_, err := c.Conn.Write(msg.Serialize())
 	return err
+}
+
+func (c *Client) UpdateBitfieldRoutine(close chan struct{}) {
+	for range close {
+		msg := &message.Message{
+			ID: message.MsgRequestBitfield,
+		}
+		_, err := c.Conn.Write(msg.Serialize())
+		if err != nil {
+		}
+		msg, err = message.Read(c.Conn)
+		if err != nil {
+		}
+		c.Bitfield = msg.Payload
+	}
 }

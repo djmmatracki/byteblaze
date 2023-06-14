@@ -5,6 +5,8 @@ import (
 	"crypto/sha1"
 	"fmt"
 	"log"
+	"math/rand"
+	"os"
 	"runtime"
 	"time"
 
@@ -134,13 +136,18 @@ func checkIntegrity(pw *pieceWork, buf []byte) error {
 
 func (t *Torrent) startDownloadWorker(peer peers.Peer, workQueue chan *pieceWork, results chan *pieceResult) {
 	// Initialize handshake
+	// closeUpdateBitfield := make(chan struct{})
 	log.Println("Initializing handshake to peer that we would like to download from")
 	c, err := client.New(peer, t.PeerID, t.InfoHash)
 	if err != nil {
 		log.Printf("Could not handshake with %s. Disconnecting\n", peer.IP)
 		return
 	}
-	defer c.Conn.Close()
+	// go c.UpdateBitfieldRoutine(closeUpdateBitfield)
+	defer func() {
+		// closeUpdateBitfield <- struct{}{}
+		c.Conn.Close()
+	}()
 	log.Printf("Completed handshake with %s\n", peer.IP)
 
 	c.SendUnchoke()
@@ -148,7 +155,6 @@ func (t *Torrent) startDownloadWorker(peer peers.Peer, workQueue chan *pieceWork
 
 	for pw := range workQueue {
 		if !c.Bitfield.HasPiece(pw.index) {
-			log.Println("bitfield does not have piece")
 			workQueue <- pw // Put piece back on the queue
 			continue
 		}
@@ -168,10 +174,8 @@ func (t *Torrent) startDownloadWorker(peer peers.Peer, workQueue chan *pieceWork
 			workQueue <- pw // Put piece back on the queue
 			continue
 		}
-
 		c.SendHave(pw.index)
 		results <- &pieceResult{pw.index, buf}
-		//
 	}
 }
 
@@ -190,14 +194,14 @@ func (t *Torrent) calculatePieceSize(index int) int {
 }
 
 // Download downloads the torrent. This stores the entire file in memory.
-func (t *Torrent) Download() ([]byte, error) {
+func (t *Torrent) Download() error {
 	log.Println("Starting download for", t.Name)
 	// Init queues for workers to retrieve work and send results
 	workQueue := make(chan *pieceWork, len(t.PieceHashes))
 	results := make(chan *pieceResult)
+	// TODO: Find an efficient way to shuffle pieces
 	for index, hash := range t.PieceHashes {
 		length := t.calculatePieceSize(index)
-		// Shuffle pieces
 		workQueue <- &pieceWork{index, hash, length}
 	}
 
@@ -207,20 +211,67 @@ func (t *Torrent) Download() ([]byte, error) {
 		go t.startDownloadWorker(peer, workQueue, results)
 	}
 
+	// create file with appropriate size
+	f, err := os.Create(fmt.Sprintf("/var/byteblaze/%x/%s", t.InfoHash, t.Name))
+	if err != nil {
+		log.Fatalf("Could not create out file: %v", err)
+	}
+	_, err = f.Seek(int64(t.Length-1), 0)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	// Collect results into a buffer until full
-	buf := make([]byte, t.Length)
+	// buf := make([]byte, t.Length)
 	donePieces := 0
 	for donePieces < len(t.PieceHashes) {
 		res := <-results
-		begin, end := t.calculateBoundsForPiece(res.index)
-		copy(buf[begin:end], res.buf)
 		donePieces++
+
+		// write piece at correct offset
+		pos := res.index * t.PieceLength
+		_, err = f.WriteAt(res.buf, int64(pos))
+		if err != nil {
+			log.Fatalf("Could not write to out file: %v", err)
+		}
+
+		// pieceFilePath := fmt.Sprintf("/var/byteblaze/%x/%d", t.InfoHash, res.index)
+		// err := writeToFile(pieceFilePath, res.buf)
+		// if err != nil {
+		// 	return err
+		// }
 
 		percent := float64(donePieces) / float64(len(t.PieceHashes)) * 100
 		numWorkers := runtime.NumGoroutine() - 1 // subtract 1 for main thread
 		log.Printf("(%0.2f%%) Downloaded piece #%d from %d peers\n", percent, res.index, numWorkers)
 	}
 	close(workQueue)
+	return nil
+}
 
-	return buf, nil
+func writeToFile(filePath string, data []byte) error {
+
+	// Open the file in write mode, create if it doesn't exist
+	file, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	if err != nil {
+		fmt.Println("Failed to open file:", err)
+		return err
+	}
+	defer file.Close()
+
+	_, err = file.Write(data)
+	if err != nil {
+		fmt.Println("Failed to write to file:", err)
+		return err
+	}
+
+	fmt.Println("Data written to file:", filePath)
+	return nil
+}
+
+func shuffle(slice []pieceWork) {
+	rand.Seed(time.Now().UnixNano()) // Initialize random seed
+	rand.Shuffle(len(slice), func(i, j int) {
+		slice[i], slice[j] = slice[j], slice[i]
+	})
 }
