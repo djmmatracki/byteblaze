@@ -1,8 +1,11 @@
 package app
 
 import (
+	"bytes"
+	"crypto/rand"
 	"encoding/binary"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net"
@@ -48,9 +51,6 @@ func handleConnection(conn net.Conn) {
 	switch hs.Action {
 	case handshake.HandshakeReceiveBroadcast:
 		// Receive a broadcast message with the torrentfile and start downloading the file specified in the torrent file.
-		// torrentfile, err := ioutil.ReadAll(conn)
-		// bencode.Decode(conn)
-
 		log.Println("received broadcast and start downloading")
 		// Send back handshake
 		req := handshake.New(handshake.HandshakeACK, hs.InfoHash, hs.PeerID)
@@ -65,13 +65,30 @@ func handleConnection(conn net.Conn) {
 		bto := torrentfile.BencodeTorrent{}
 
 		// TODO - Save torrentfile to file system /var/byteblaze
+		log.Println("starting to read...")
+		data, err := io.ReadAll(conn)
+		if err != nil {
+			log.Fatal("error while reading torrentfile data")
+			return
+		}
+		log.Println("creating directory")
+		createDir(fmt.Sprintf("/var/byteblaze/%x", hs.InfoHash))
+		torrentFilePath := fmt.Sprintf("/var/byteblaze/%x/torrentfile", hs.InfoHash)
+		err = os.WriteFile(torrentFilePath, data, 0666) // Make specific file perms
+		if err != nil {
+			log.Fatal("error while writing torrentfile")
+			return
+		}
+		log.Println("created torrentfile")
 
-		err = bencode.Unmarshal(conn, &bto)
+		log.Printf("unmarshaling to bencode format, data: '%s'", data)
+		buffer := bytes.NewBuffer(data)
+		err = bencode.Unmarshal(buffer, &bto)
 		if err != nil {
 			log.Fatal("cannot unmarshal beencode file")
 			return
 		}
-		log.Println("unmarshaling beencode file")
+		log.Printf("unmarshaled beencode file to %+v", bto)
 
 		tf, err := bto.ToTorrentFile()
 		if err != nil {
@@ -115,7 +132,7 @@ func handleConnection(conn net.Conn) {
 		// Expect torrentfile
 		// Send torrentfile to peers
 		// Start downloading
-		log.Println("received broadcast and start downloading")
+		log.Println("received send broadcast and start downloading")
 		// Send back handshake
 		req := handshake.New(handshake.HandshakeACK, hs.InfoHash, hs.PeerID)
 		_, err := conn.Write(req.Serialize())
@@ -143,10 +160,20 @@ func handleConnection(conn net.Conn) {
 			return
 		}
 		log.Println("converted bencode to torrentfile")
+		log.Println("broadcasting messages to peers")
+		// Send broadcast to peers
+		peers := []string{
+			"143.42.54.125:6881",
+			"143.42.54.140:6881",
+		}
+		for _, peerIP := range peers {
+			broadcastMessage(peerIP, bto, hs.InfoHash)
+		}
+		log.Println("broadcasted messages")
 
 		// Start downloading
 		log.Println("starting downloading")
-		err = tf.DownloadToFile("downloaded_file")
+		err = tf.DownloadToFile("downloadedfile")
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -166,6 +193,7 @@ func handleFileRequest(conn net.Conn, infoHash [20]byte) error {
 
 	log.Printf("got info hash %x", infoHash)
 	pathToPieces := fmt.Sprintf("/var/byteblaze/%x", infoHash)
+
 	_, err := os.Stat(pathToPieces)
 	if err == nil {
 		log.Println("File exists")
@@ -185,6 +213,9 @@ func handleFileRequest(conn net.Conn, infoHash [20]byte) error {
 	}
 
 	for _, file := range dir {
+		if file.Name() == "torrentfile" {
+			continue
+		}
 		log.Printf("processing piece '%s'", file.Name())
 		i, err := strconv.Atoi(file.Name())
 		if err != nil {
@@ -274,5 +305,53 @@ func handleFileRequest(conn net.Conn, infoHash [20]byte) error {
 			return err
 		}
 
+	}
+}
+
+func broadcastMessage(peerIP string, tf torrentfile.BencodeTorrent, infoHash [20]byte) {
+	conn, err := net.Dial("tcp", peerIP)
+	if err != nil {
+		return
+	}
+	var peerID [20]byte
+	_, err = rand.Read(peerID[:])
+	if err != nil {
+		return
+	}
+
+	req := handshake.New(handshake.HandshakeReceiveBroadcast, infoHash, peerID)
+	_, err = conn.Write(req.Serialize())
+	if err != nil {
+		log.Println("error while sending handshake")
+		return
+	}
+
+	_, err = handshake.Read(conn)
+	if err != nil {
+		log.Printf("cannot read handshake %v\n", err)
+		return
+	}
+
+	err = bencode.Marshal(conn, tf)
+	if err != nil {
+		log.Printf("cannot marshal tf to connection %v\n", err)
+		return
+	}
+	defer conn.Close()
+	log.Printf("successfuly broadcasted message to peer %s", peerIP)
+}
+
+func createDir(directoryPath string) {
+	// Check if the directory already exists
+	if _, err := os.Stat(directoryPath); os.IsNotExist(err) {
+		// Directory does not exist, create it
+		err := os.MkdirAll(directoryPath, 0755)
+		if err != nil {
+			fmt.Println("Failed to create directory:", err)
+			return
+		}
+		fmt.Println("Directory created:", directoryPath)
+	} else {
+		fmt.Println("Directory already exists:", directoryPath)
 	}
 }

@@ -49,20 +49,9 @@ func (t *TorrentFile) DownloadToFile(path string) error {
 		return err
 	}
 	log.Printf("generated peer ID %s", peerID)
-	IPs, err := net.LookupHost("byteblaze-1")
-	if err != nil {
-		log.Println("error while looking up host", err)
-		return err
-	}
-	if len(IPs) != 1 {
-		log.Println("could not resolve host")
-		return nil
-	}
-	log.Printf("resolved IP %s", IPs[0])
-
 	peers := []peers.Peer{
 		{
-			IP:   net.ParseIP(IPs[0]),
+			IP:   net.ParseIP("143.42.54.122"),
 			Port: Port,
 		},
 	}
