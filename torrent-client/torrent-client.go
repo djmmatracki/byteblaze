@@ -5,53 +5,61 @@ import (
 	"github.com/anacrolix/torrent/metainfo"
 	"github.com/sirupsen/logrus"
 
+	"os"
 	"time"
 )
 
-type TorrentClient struct {
-	client *torrent.Client
-	logger *logrus.Logger
+type PayloadForBroadcast struct {
+	DropLocation string
+	Mu           *metainfo.MetaInfo
 }
 
-func NewTorrentClient(config *torrent.ClientConfig, logger *logrus.Logger) *TorrentClient {
+type TorrentFactory struct {
+	Config torrent.ClientConfig
+	Logger *logrus.Logger
+}
+
+func NewTorrentClient(config *torrent.ClientConfig) *torrent.Client {
 	client, err := torrent.NewClient(config)
 	if err != nil {
-		logger.Fatal(err)
+		panic(err)
 	}
-
-	logger.Info(client.DhtServers())
-
-	return &TorrentClient{
-		client: client,
-		logger: logger,
-	}
+	return client
 }
 
-func (tc *TorrentClient) CreateTorrentFromFile(filePath string) (*torrent.Torrent, error) {
+func (tc *TorrentFactory) CreateTorrentFromFile(filePath string) (*metainfo.MetaInfo, error) {
 	torrent, err := metainfo.LoadFromFile(filePath)
 	if err != nil {
-		tc.logger.Errorf("Failed to load torrent file: %s", err)
+		tc.Logger.Errorf("Failed to load torrent file: %s", err)
 		return nil, err
 	}
-	return tc.client.AddTorrent(torrent)
+	return torrent, nil
 }
 
-func (tc *TorrentClient) DownloadFromTorrent(torrentMetaData *metainfo.MetaInfo) error {
+func (tc *TorrentFactory) DownloadFromTorrent(torrentMetaData PayloadForBroadcast) error {
 	var prevBytesCompleted int64
-
-	torrent, err := tc.client.AddTorrent(torrentMetaData)
+	err := os.MkdirAll(torrentMetaData.DropLocation, os.ModePerm)
 	if err != nil {
-		tc.logger.Errorf("Failed to add torrent: %s", err)
+		tc.Logger.Errorf("Failed to create directory: %s", err)
 		return err
 	}
-	tc.logger.Infof("Downloading torrent: %s", torrent.Name())
+
+	tc.Config.DataDir = torrentMetaData.DropLocation
+	client := NewTorrentClient(&tc.Config)
+
+	torrent, err := client.AddTorrent(torrentMetaData.Mu)
+	if err != nil {
+		tc.Logger.Errorf("Failed to add torrent: %s", err)
+		return err
+	}
+	tc.Logger.Infof("Downloading torrent: %s", torrent.Name())
 	<-torrent.GotInfo()
 
 	torrent.DownloadAll()
 
 	for {
 		if torrent.BytesCompleted() >= torrent.Length() {
-			tc.logger.Println("Torrent is seeding now.")
+			tc.Logger.Println("Torrent is seeding now.")
 			time.Sleep(60 * time.Minute)
 			break
 		} else {
@@ -60,15 +68,11 @@ func (tc *TorrentClient) DownloadFromTorrent(torrentMetaData *metainfo.MetaInfo)
 			// Calculate download speed.
 			downloadSpeed := bytesCompleted - prevBytesCompleted
 			prevBytesCompleted = bytesCompleted
-			tc.logger.Infof("Download speed: %d bytes/sec", downloadSpeed)
-			tc.logger.Infof("Upload speed: %d bytes/sec", stats.BytesWrittenData)
-			tc.logger.Infof("Still downloading, completion: %.2f%%", float64(bytesCompleted)*100/float64(torrent.Length()))
+			tc.Logger.Infof("Download speed: %d bytes/sec", downloadSpeed)
+			tc.Logger.Infof("Upload speed: %d bytes/sec", stats.BytesWrittenData)
+			tc.Logger.Infof("Still downloading, completion: %.2f%%", float64(bytesCompleted)*100/float64(torrent.Length()))
 			time.Sleep(5 * time.Second)
 		}
 	}
 	return nil
-}
-
-func (tc *TorrentClient) AddTorrentFromFile(filePath string) (*torrent.Torrent, error) {
-	return tc.client.AddTorrentFromFile(filePath)
 }

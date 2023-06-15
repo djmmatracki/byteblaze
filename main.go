@@ -1,49 +1,62 @@
 package main
 
 import (
+	"fmt"
 	"net"
 	"trrt-tst/byteblaze-deamon"
+	torrent_client "trrt-tst/torrent-client"
 
-	"github.com/anacrolix/dht/v2"
 	"github.com/anacrolix/torrent"
+	"github.com/sirupsen/logrus"
 )
-
-//	func startingNodes(network string) dht.StartingNodesGetter {
-//		return func() (ret []dht.NodeAddr) {
-//	}
-func startingNodes(network string) dht.StartingNodesGetter {
-	return func() ([]dht.Addr, error) {
-		addr := dht.NewAddr(&net.UDPAddr{IP: net.ParseIP("172.104.234.48"), Port: 42069})
-		return []dht.Addr{addr}, nil
-	}
-}
 
 func main() {
 	torrentCfg := torrent.NewDefaultClientConfig()
-	torrentCfg.NoDHT = false
-	torrentCfg.DisableTrackers = true
 	torrentCfg.Seed = true
-	torrentCfg.DhtStartingNodes = startingNodes
+
+	logger := logrus.New()
+	logger.SetReportCaller(true)
 
 	config := byteblaze_deamon.Config{
-		TorrentConfig: torrent.NewDefaultClientConfig(),
+		TorrentFactory: torrent_client.TorrentFactory{
+			Config: *torrentCfg,
+			Logger: logger,
+		},
 	}
-	byteblaze_deamon := byteblaze_deamon.NewByteBlazeDaemon(config)
-	byteblaze_deamon.Start()
 
-	// t, err := byteblaze_deamon.TorrentClient.AddTorrentFromFile("test.torrent")
-	// if err != nil {
-	// 	panic(err)
-	// }
+	byteblazeDeamonClinet := byteblaze_deamon.NewByteBlazeDaemon(config)
+	go byteblazeDeamonClinet.Start()
 
-	// byteblaze_deamon.AddPeer(net.ParseIP("139.177.179.58"))
-	// byteblaze_deamon.AddPeer(net.ParseIP("194.233.170.18"))
+	_, torrentPath, dropLocation, err := byteblazeDeamonClinet.DownloadPayloadFromACoordinator()
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
 
-	// metainfo := t.Metainfo()
-	// errors := byteblaze_deamon.BroadcastTorrentFileToAllPeers(metainfo)
-	// if len(errors) > 0 {
-	// 	for _, err := range errors {
-	// 		fmt.Println(err)
-	// 	}
-	// }
+	byteblazeDeamonClinet.AddPeer(net.ParseIP("139.177.179.58"))
+	byteblazeDeamonClinet.AddPeer(net.ParseIP("194.233.170.18"))
+	byteblazeDeamonClinet.AddPeer(net.ParseIP("172.104.234.48"))
+
+	t, err := byteblazeDeamonClinet.TorrentFactory.CreateTorrentFromFile(torrentPath)
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	playloadForBroadcast := torrent_client.PayloadForBroadcast{
+		DropLocation: dropLocation,
+		Mu:           t,
+	}
+
+	fmt.Println("Downloading/seeding torrent")
+	// seeding
+	go byteblazeDeamonClinet.TorrentFactory.DownloadFromTorrent(playloadForBroadcast)
+
+	fmt.Println("Broadcasting torrent")
+	errors := byteblazeDeamonClinet.BroadcastTorrentFileToAllPeers(playloadForBroadcast)
+	if len(errors) > 0 {
+		for _, err := range errors {
+			fmt.Println(err)
+		}
+	}
+	select {}
 }
