@@ -39,12 +39,12 @@ func main() {
 	payload := &byteblaze_deamon.Payload{
 		File:         fileData,
 		Torrent:      torrentData,
-		FileName:     "superdummyfile",
-		TorrentName:  "supertest.torrent",
+		FileName:     "myfile",
+		TorrentName:  "myfile.torrent",
 		DropLocation: "/root/drop",
 	}
 
-	var buffer bytes.Buffer // Stand-in for a network connection
+	var buffer bytes.Buffer
 	encoder := gob.NewEncoder(&buffer)
 	err = encoder.Encode(payload)
 	if err != nil {

@@ -4,6 +4,7 @@ import (
 	"github.com/anacrolix/torrent"
 	"github.com/anacrolix/torrent/metainfo"
 	"github.com/sirupsen/logrus"
+	"io/ioutil"
 
 	"os"
 	"time"
@@ -11,7 +12,8 @@ import (
 
 type PayloadForBroadcast struct {
 	DropLocation string
-	Mu           *metainfo.MetaInfo
+	Torrent      []byte
+	TorrentName  string
 }
 
 type TorrentFactory struct {
@@ -36,41 +38,53 @@ func (tc *TorrentFactory) CreateTorrentFromFile(filePath string) (*metainfo.Meta
 	return torrent, nil
 }
 
-func (tc *TorrentFactory) DownloadFromTorrent(torrentMetaData PayloadForBroadcast) error {
+func (tc *TorrentFactory) DownloadFromTorrent(payload PayloadForBroadcast) error {
 	var prevBytesCompleted int64
-	err := os.MkdirAll(torrentMetaData.DropLocation, os.ModePerm)
+	// check if path dropLocation exists
+	if _, err := os.Stat(payload.DropLocation); os.IsNotExist(err) {
+		os.Mkdir(payload.DropLocation, 0777)
+	}
+
+	err := ioutil.WriteFile(payload.DropLocation+"/"+payload.TorrentName, payload.Torrent, 0644)
 	if err != nil {
-		tc.Logger.Errorf("Failed to create directory: %s", err)
+		tc.Logger.Errorf("Failed to write torrent file: %s", err)
 		return err
 	}
 
-	tc.Config.DataDir = torrentMetaData.DropLocation
-	client := NewTorrentClient(&tc.Config)
+	mu, err := tc.CreateTorrentFromFile(payload.DropLocation + "/" + payload.TorrentName)
+	if err != nil {
+		tc.Logger.Errorf("Failed to create torrent from file: %s", err)
+		return err
+	}
 
-	torrent, err := client.AddTorrent(torrentMetaData.Mu)
+	tc.Config.DataDir = payload.DropLocation
+	tc.Config.Seed = true
+	tc.Logger.Infof("Downloading/seeding torrent to %s", payload.DropLocation)
+
+	client := NewTorrentClient(&tc.Config)
+	t, err := client.AddTorrent(mu)
 	if err != nil {
 		tc.Logger.Errorf("Failed to add torrent: %s", err)
 		return err
 	}
-	tc.Logger.Infof("Downloading torrent: %s", torrent.Name())
-	<-torrent.GotInfo()
+	tc.Logger.Infof("Downloading torrent: %s", t.Name())
+	<-t.GotInfo()
 
-	torrent.DownloadAll()
-
+	t.DownloadAll()
 	for {
-		if torrent.BytesCompleted() >= torrent.Length() {
+		if t.BytesCompleted() >= t.Length() {
 			tc.Logger.Println("Torrent is seeding now.")
 			time.Sleep(60 * time.Minute)
 			break
 		} else {
-			stats := torrent.Stats()
-			bytesCompleted := torrent.BytesCompleted()
+			stats := t.Stats()
+			bytesCompleted := t.BytesCompleted()
 			// Calculate download speed.
 			downloadSpeed := bytesCompleted - prevBytesCompleted
 			prevBytesCompleted = bytesCompleted
 			tc.Logger.Infof("Download speed: %d bytes/sec", downloadSpeed)
 			tc.Logger.Infof("Upload speed: %d bytes/sec", stats.BytesWrittenData)
-			tc.Logger.Infof("Still downloading, completion: %.2f%%", float64(bytesCompleted)*100/float64(torrent.Length()))
+			tc.Logger.Infof("Still downloading, completion: %.2f%%", float64(bytesCompleted)*100/float64(t.Length()))
 			time.Sleep(5 * time.Second)
 		}
 	}

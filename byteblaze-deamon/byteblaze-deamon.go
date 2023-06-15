@@ -86,7 +86,9 @@ func (d *ByteBlazeDaemon) SendTorrentFileToPeer(pd torrent_client.PayloadForBroa
 	}
 	defer conn.Close()
 
-	_, err = conn.Write([]byte(pd.Mu.InfoBytes))
+	// Use gob to encode the PayloadForBroadcast object
+	encoder := gob.NewEncoder(conn)
+	err = encoder.Encode(pd)
 	if err != nil {
 		return fmt.Errorf("unable to write metainfo to connection: %w", err)
 	}
@@ -104,15 +106,16 @@ func (d *ByteBlazeDaemon) WaitForTorrentFromOtherPeer() torrent_client.PayloadFo
 
 	conn, err := ln.Accept()
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("unable to accept connection: %s ", err)
 	}
 	defer conn.Close()
 
-	// struct form a bytes
+	// Decode the incoming gob data to PayloadForBroadcast object
 	var payloadForBroadcast torrent_client.PayloadForBroadcast
-	err = gob.NewDecoder(conn).Decode(&payloadForBroadcast)
+	decoder := gob.NewDecoder(conn)
+	err = decoder.Decode(&payloadForBroadcast)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("decode error: %s", err)
 	}
 
 	return payloadForBroadcast
@@ -169,26 +172,26 @@ func (d *ByteBlazeDaemon) WaitForAFileFromACoordinator() (*Payload, error) {
 }
 
 // DownloadPayloadFromACoordinator downloads a payload from a coordinator
-func (d *ByteBlazeDaemon) DownloadPayloadFromACoordinator() (string, string, string, error) {
+func (d *ByteBlazeDaemon) DownloadPayloadFromACoordinator() (*Payload, error) {
 	payload, err := d.WaitForAFileFromACoordinator()
 	if err != nil {
-		return "", "", "", err
+		return payload, err
 	}
 
 	err = os.MkdirAll(payload.DropLocation, 0755)
 	if err != nil {
-		return "", "", "", err
+		return payload, err
 	}
 
 	err = ioutil.WriteFile(payload.DropLocation+"/"+payload.FileName, payload.File, 0644)
 	if err != nil {
-		return "", "", "", err
+		return payload, err
 	}
 
 	err = ioutil.WriteFile(payload.DropLocation+"/"+payload.TorrentName, payload.Torrent, 0644)
 	if err != nil {
-		return "", "", "", err
+		return payload, err
 	}
 
-	return payload.DropLocation + "/" + payload.FileName, payload.DropLocation + "/" + payload.TorrentName, payload.DropLocation, nil
+	return payload, nil
 }

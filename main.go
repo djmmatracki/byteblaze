@@ -2,12 +2,11 @@ package main
 
 import (
 	"fmt"
+	"github.com/anacrolix/torrent"
+	"github.com/sirupsen/logrus"
 	"net"
 	"trrt-tst/byteblaze-deamon"
 	torrent_client "trrt-tst/torrent-client"
-
-	"github.com/anacrolix/torrent"
-	"github.com/sirupsen/logrus"
 )
 
 func main() {
@@ -15,7 +14,6 @@ func main() {
 	torrentCfg.Seed = true
 
 	logger := logrus.New()
-	logger.SetReportCaller(true)
 
 	config := byteblaze_deamon.Config{
 		TorrentFactory: torrent_client.TorrentFactory{
@@ -27,7 +25,7 @@ func main() {
 	byteblazeDeamonClinet := byteblaze_deamon.NewByteBlazeDaemon(config)
 	go byteblazeDeamonClinet.Start()
 
-	_, torrentPath, dropLocation, err := byteblazeDeamonClinet.DownloadPayloadFromACoordinator()
+	payload, err := byteblazeDeamonClinet.DownloadPayloadFromACoordinator()
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -35,16 +33,12 @@ func main() {
 
 	byteblazeDeamonClinet.AddPeer(net.ParseIP("139.177.179.58"))
 	byteblazeDeamonClinet.AddPeer(net.ParseIP("194.233.170.18"))
-	byteblazeDeamonClinet.AddPeer(net.ParseIP("172.104.234.48"))
-
-	t, err := byteblazeDeamonClinet.TorrentFactory.CreateTorrentFromFile(torrentPath)
-	if err != nil {
-		fmt.Println(err)
-	}
+	//	byteblazeDeamonClinet.AddPeer(net.ParseIP("172.104.234.48"))
 
 	playloadForBroadcast := torrent_client.PayloadForBroadcast{
-		DropLocation: dropLocation,
-		Mu:           t,
+		DropLocation: payload.DropLocation,
+		Torrent:      payload.Torrent,
+		TorrentName:  payload.TorrentName,
 	}
 
 	fmt.Println("Downloading/seeding torrent")
