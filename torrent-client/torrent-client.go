@@ -1,13 +1,15 @@
 package torrent_client
 
 import (
+	"fmt"
+	"io/ioutil"
+	"net"
+	"os"
+	"time"
+
 	"github.com/anacrolix/torrent"
 	"github.com/anacrolix/torrent/metainfo"
 	"github.com/sirupsen/logrus"
-	"io/ioutil"
-
-	"os"
-	"time"
 )
 
 type PayloadForBroadcast struct {
@@ -36,6 +38,21 @@ func (tc *TorrentFactory) CreateTorrentFromFile(filePath string) (*metainfo.Meta
 		return nil, err
 	}
 	return torrent, nil
+}
+
+func sendInfoHashToHealthChecker(infoHash string, address string) error {
+	conn, err := net.DialTimeout("tcp", address, 5*time.Second)
+	if err != nil {
+		return fmt.Errorf("failed to dial: %w", err)
+	}
+	defer conn.Close()
+
+	_, err = conn.Write([]byte(infoHash))
+	if err != nil {
+		return fmt.Errorf("failed to write: %w", err)
+	}
+
+	return nil
 }
 
 func (tc *TorrentFactory) DownloadFromTorrent(payload PayloadForBroadcast) error {
@@ -74,7 +91,25 @@ func (tc *TorrentFactory) DownloadFromTorrent(payload PayloadForBroadcast) error
 	for {
 		if t.BytesCompleted() >= t.Length() {
 			tc.Logger.Println("Torrent is seeding now.")
-			time.Sleep(60 * time.Minute)
+			infoHash := fmt.Sprintf("%x", t.InfoHash())
+			tc.Logger.Infof("Sending data info hash %s to a byteblyze healthchecker", infoHash)
+			err = sendInfoHashToHealthChecker(infoHash, "localhost:6881")
+			if err != nil {
+				tc.Logger.Errorf("Failed to send info hash to health checker: %s", err)
+				return err
+			}
+
+			for {
+				// Get connected peers
+				peers := t.KnownSwarm()
+				// If no peers are connected, stop seeding
+				if len(peers) == 0 {
+					tc.Logger.Println("No more peers are connected. Stopping seeding.")
+					client.Close()
+					break
+				}
+				time.Sleep(10 * time.Second)
+			}
 			break
 		} else {
 			stats := t.Stats()
