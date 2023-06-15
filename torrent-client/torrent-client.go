@@ -93,7 +93,7 @@ func (tc *TorrentFactory) DownloadFromTorrent(payload PayloadForBroadcast) error
 			tc.Logger.Println("Torrent is seeding now.")
 			infoHash := fmt.Sprintf("%x", t.InfoHash())
 			tc.Logger.Infof("Sending data info hash %s to a byteblyze healthchecker", infoHash)
-			err = sendInfoHashToHealthChecker(infoHash, "localhost:6881")
+			err = sendInfoHashToHealthChecker(infoHash, "byteblaze-healthchecker-1:6881")
 			if err != nil {
 				tc.Logger.Errorf("Failed to send info hash to health checker: %s", err)
 				return err
