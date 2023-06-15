@@ -40,14 +40,14 @@ func (tc *TorrentFactory) CreateTorrentFromFile(filePath string) (*metainfo.Meta
 	return torrent, nil
 }
 
-func sendInfoHashToHealthChecker(infoHash string, address string) error {
+func sendInfoHashToHealthChecker(infoHash []byte, address string) error {
 	conn, err := net.DialTimeout("tcp", address, 5*time.Second)
 	if err != nil {
 		return fmt.Errorf("failed to dial: %w", err)
 	}
 	defer conn.Close()
 
-	_, err = conn.Write([]byte(infoHash))
+	_, err = conn.Write(infoHash)
 	if err != nil {
 		return fmt.Errorf("failed to write: %w", err)
 	}
@@ -91,9 +91,8 @@ func (tc *TorrentFactory) DownloadFromTorrent(payload PayloadForBroadcast) error
 	for {
 		if t.BytesCompleted() >= t.Length() {
 			tc.Logger.Println("Torrent is seeding now.")
-			infoHash := fmt.Sprintf("%x", t.InfoHash())
-			tc.Logger.Infof("Sending data info hash %s to a byteblyze healthchecker", infoHash)
-			err = sendInfoHashToHealthChecker(infoHash, "byteblaze-healthchecker-1:6881")
+			tc.Logger.Infof("Sending data info hash %x to a byteblyze healthchecker", t.InfoHash().Bytes())
+			err = sendInfoHashToHealthChecker(t.InfoHash().Bytes(), "byteblaze-healthchecker-1:6881")
 			if err != nil {
 				tc.Logger.Errorf("Failed to send info hash to health checker: %s", err)
 				return err
