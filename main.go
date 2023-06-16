@@ -25,32 +25,33 @@ func main() {
 	byteblazeDeamonClinet := byteblaze_deamon.NewByteBlazeDaemon(config)
 	go byteblazeDeamonClinet.Start()
 
-	payload, err := byteblazeDeamonClinet.DownloadPayloadFromACoordinator()
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-
-	byteblazeDeamonClinet.AddPeer(net.ParseIP("139.177.179.58"))
-	byteblazeDeamonClinet.AddPeer(net.ParseIP("194.233.170.18"))
-	//	byteblazeDeamonClinet.AddPeer(net.ParseIP("172.104.234.48"))
-
-	playloadForBroadcast := torrent_client.PayloadForBroadcast{
-		DropLocation: payload.DropLocation,
-		Torrent:      payload.Torrent,
-		TorrentName:  payload.TorrentName,
-	}
-
-	fmt.Println("Downloading/seeding torrent")
-	// seeding
-	go byteblazeDeamonClinet.TorrentFactory.DownloadFromTorrent(playloadForBroadcast)
-
-	fmt.Println("Broadcasting torrent")
-	errors := byteblazeDeamonClinet.BroadcastTorrentFileToAllPeers(playloadForBroadcast)
-	if len(errors) > 0 {
-		for _, err := range errors {
+	for {
+		payload, err := byteblazeDeamonClinet.DownloadPayloadFromACoordinator()
+		if err != nil {
 			fmt.Println(err)
+			return
+		}
+
+		byteblazeDeamonClinet.AddPeer(net.ParseIP("143.42.54.125"))
+		byteblazeDeamonClinet.AddPeer(net.ParseIP("143.42.54.140"))
+		//	byteblazeDeamonClinet.AddPeer(net.ParseIP("172.104.234.48"))
+
+		playloadForBroadcast := torrent_client.PayloadForBroadcast{
+			DropLocation: payload.DropLocation,
+			Torrent:      payload.Torrent,
+			TorrentName:  payload.TorrentName,
+		}
+
+		fmt.Println("Downloading/seeding torrent")
+		// seeding
+		go byteblazeDeamonClinet.TorrentFactory.DownloadFromTorrent(playloadForBroadcast)
+
+		fmt.Println("Broadcasting torrent")
+		errors := byteblazeDeamonClinet.BroadcastTorrentFileToAllPeers(playloadForBroadcast)
+		if len(errors) > 0 {
+			for _, err := range errors {
+				fmt.Println(err)
+			}
 		}
 	}
-	select {}
 }

@@ -105,11 +105,10 @@ func (tc *TorrentFactory) DownloadFromTorrent(payload PayloadForBroadcast) error
 				if len(peers) == 0 {
 					tc.Logger.Println("No more peers are connected. Stopping seeding.")
 					client.Close()
-					break
+					return nil
 				}
 				time.Sleep(10 * time.Second)
 			}
-			break
 		} else {
 			stats := t.Stats()
 			bytesCompleted := t.BytesCompleted()
@@ -122,5 +121,4 @@ func (tc *TorrentFactory) DownloadFromTorrent(payload PayloadForBroadcast) error
 			time.Sleep(5 * time.Second)
 		}
 	}
-	return nil
 }

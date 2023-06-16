@@ -3,10 +3,12 @@ package main
 import (
 	"bytes"
 	"encoding/gob"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"net"
 
+	"github.com/anacrolix/torrent/metainfo"
 	"trrt-tst/byteblaze-deamon"
 )
 
@@ -15,7 +17,10 @@ const (
 )
 
 func main() {
-	conn, err := net.Dial("tcp", "localhost:5001")
+	conn, err := net.Dial("tcp", "143.42.54.122:5001")
+	if err != nil {
+		log.Fatalf("field to create conenction to %v", err)
+	}
 	defer conn.Close()
 
 	if err != nil {
@@ -24,24 +29,30 @@ func main() {
 	defer conn.Close()
 
 	// Read file data
-	fileData, err := ioutil.ReadFile("/root/dummyfile")
+	fileData, err := ioutil.ReadFile("default.conf")
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	// Read torrent data
-	torrentData, err := ioutil.ReadFile("/root/test.torrent")
+	torrentData, err := ioutil.ReadFile("torrentfile")
 	if err != nil {
 		log.Fatal(err)
 	}
+	mt, err := metainfo.Load(bytes.NewReader(torrentData))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	infoHash := fmt.Sprintf("%x", mt.HashInfoBytes())
 
 	// Create and fill a Payload object
 	payload := &byteblaze_deamon.Payload{
 		File:         fileData,
 		Torrent:      torrentData,
-		FileName:     "myfile",
-		TorrentName:  "myfile.torrent",
-		DropLocation: "/root/drop",
+		FileName:     "default.conf",
+		TorrentName:  "torrentfile",
+		DropLocation: fmt.Sprintf("/var/byteblaze/%s", infoHash),
 	}
 
 	var buffer bytes.Buffer
